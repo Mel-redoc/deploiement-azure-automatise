@@ -48,7 +48,7 @@ jobs:
           dotnet-sonarscanner begin
           /k:"Mel-redoc_deploiement-azure-automatise"
           /o:"mel-redoc"
-          /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+          /d:sonar.token="$SONAR_TOKEN"
 
       - name: Build
         run: dotnet build --no-restore --configuration Release
@@ -59,4 +59,4 @@ jobs:
       - name: End SonarQube analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: dotnet-sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+        run: dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"
