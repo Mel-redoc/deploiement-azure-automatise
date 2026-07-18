@@ -60,3 +60,64 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy hook (staging)
+        run: curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_STAGING }}"
+
+      - name: Wait for staging to be healthy
+        run: |
+          for i in {1..20}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://monapi-staging.onrender.com/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Staging is healthy!"
+              exit 0
+            fi
+            echo "Attempt $i: staging not ready yet (status $STATUS), waiting 15s..."
+            sleep 15
+          done
+          echo "Staging failed health check after multiple attempts."
+          exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy hook (production)
+        run: curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION }}"
+
+      - name: Wait for production to be healthy
+        id: healthcheck
+        run: |
+          for i in {1..20}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://monapi-production.onrender.com/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Production is healthy!"
+              exit 0
+            fi
+            echo "Attempt $i: production not ready yet (status $STATUS), waiting 15s..."
+            sleep 15
+          done
+          echo "Production failed health check after multiple attempts."
+          exit 1
+
+      - name: Rollback production on failure
+        if: failure()
+        run: |
+          echo "Deployment failed, triggering rollback..."
+          LAST_GOOD_DEPLOY=$(curl -s -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID_PRODUCTION }}/deploys?limit=5" \
+            | jq -r '[.[] | select(.deploy.status=="live")][0].deploy.id')
+          echo "Rolling back to deploy: $LAST_GOOD_DEPLOY"
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"deployId\": \"$LAST_GOOD_DEPLOY\"}" \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID_PRODUCTION }}/rollback"
