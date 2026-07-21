@@ -36,7 +36,7 @@ app.MapGet("/weatherforecast", () =>
 })
 .WithName("GetWeatherForecast");
 
-app.MapGet("/health", () => Results.Ok(new { status = "", timestamp = DateTime.UtcNow }));
+app.MapGet("/health", () => Results.StatusCode(500)); 
 
 await app.RunAsync();
 
